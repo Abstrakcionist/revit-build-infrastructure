@@ -1,0 +1,57 @@
+name: Publish Revit plugin release
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: "Release version override for workflow_dispatch"
+        required: false
+        type: string
+      infrastructure_ref:
+        description: "Git ref of revit-build-infrastructure to use"
+        required: false
+        type: string
+        default: main
+
+jobs:
+  publish:
+    runs-on: windows-2025
+    steps:
+      - name: Checkout plugin
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Checkout infrastructure
+        uses: actions/checkout@v6
+        with:
+          repository: Abstrakcionist/revit-build-infrastructure
+          ref: ${{ inputs.infrastructure_ref }}
+          path: .infrastructure
+          token: ${{ secrets.INFRA_ACCESS_TOKEN }}
+
+      - name: Create release tag
+        if: github.event_name == 'workflow_dispatch' && inputs.version != ''
+        shell: bash
+        run: |
+          set -e
+          git tag "${{ inputs.version }}"
+          git push origin "${{ inputs.version }}"
+
+      - name: Cache NuGet
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+          restore-keys: ${{ runner.os }}-nuget-
+
+      - name: Publish release
+        run: dotnet run -c Release -- pack publish
+        working-directory: .infrastructure/build
+        env:
+          INFRASTRUCTURE_PATH: ${{ github.workspace }}/.infrastructure
+          PLUGIN_ROOT: ${{ github.workspace }}
+          PLUGIN_CONFIG_PATH: ${{ github.workspace }}/plugin.config.json
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DOTNET_ENVIRONMENT: ${{ (github.ref_name == 'main' || github.ref_type == 'tag') && 'Production' || 'Development' }}
+          Publish__Version: ${{ inputs.version != '' && inputs.version || github.ref_name }}
