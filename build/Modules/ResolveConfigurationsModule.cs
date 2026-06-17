@@ -1,8 +1,8 @@
 ﻿using Microsoft.VisualStudio.SolutionPersistence.Model;
 using Microsoft.VisualStudio.SolutionPersistence.Serializer;
 using ModularPipelines.Context;
-using ModularPipelines.Git.Extensions;
 using ModularPipelines.Modules;
+using RevitPlugin.Contracts;
 using Shouldly;
 
 namespace Build.Modules;
@@ -14,7 +14,7 @@ public sealed class ResolveConfigurationsModule : Module<string[]>
 {
     protected override async Task<string[]?> ExecuteAsync(IModuleContext context, CancellationToken cancellationToken)
     {
-        var solutionModel = await LoadSolutionModelAsync(context, cancellationToken);
+        var solutionModel = await LoadSolutionModelAsync(cancellationToken);
         var configurations = solutionModel.BuildTypes
             .Where(configuration => configuration.Contains("Release.R", StringComparison.OrdinalIgnoreCase))
             .ToArray();
@@ -24,20 +24,17 @@ public sealed class ResolveConfigurationsModule : Module<string[]>
         return configurations;
     }
 
-    private static async Task<SolutionModel> LoadSolutionModelAsync(IModuleContext context,
-        CancellationToken cancellationToken)
+    private static async Task<SolutionModel> LoadSolutionModelAsync(CancellationToken cancellationToken)
     {
-        var solution = context.Git().RootDirectory.FindFile(file => file.Extension == ".slnx");
-        if (solution is not null)
+        var solutionPath = PluginContext.Load().SolutionPath;
+
+        if (solutionPath.EndsWith(".slnx", StringComparison.OrdinalIgnoreCase))
         {
-            await using var slnxStream = solution.GetStream();
+            await using var slnxStream = File.OpenRead(solutionPath);
             return await SolutionSerializers.SlnXml.OpenAsync(slnxStream, cancellationToken);
         }
 
-        solution = context.Git().RootDirectory.FindFile(file => file.Extension == ".sln");
-        solution.ShouldNotBeNull("Solution file not found.");
-
-        await using var slnStream = solution.GetStream();
+        await using var slnStream = File.OpenRead(solutionPath);
         return await SolutionSerializers.SlnFileV12.OpenAsync(slnStream, cancellationToken);
     }
 }
