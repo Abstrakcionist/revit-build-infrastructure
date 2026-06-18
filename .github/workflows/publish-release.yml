@@ -16,11 +16,14 @@ on:
 jobs:
   publish:
     runs-on: windows-2025
+    permissions:
+      contents: write
     steps:
       - name: Checkout plugin
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Checkout infrastructure
         uses: actions/checkout@v6
