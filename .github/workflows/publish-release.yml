@@ -28,6 +28,7 @@ jobs:
           repository: Abstrakcionist/revit-build-infrastructure
           ref: ${{ inputs.infrastructure_ref }}
           path: .infrastructure
+          fetch-depth: 0
           token: ${{ secrets.INFRA_ACCESS_TOKEN }}
 
       - name: Create release tag
