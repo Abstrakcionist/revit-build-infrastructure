@@ -16,8 +16,6 @@ on:
 jobs:
   publish:
     runs-on: windows-2025
-    permissions:
-      contents: write
     steps:
       - name: Checkout plugin
         uses: actions/checkout@v6
