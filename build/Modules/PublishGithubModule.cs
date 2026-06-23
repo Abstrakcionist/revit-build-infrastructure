@@ -39,8 +39,10 @@ public sealed class PublishGithubModule(IOptions<BuildOptions> buildOptions) : M
         var outputFolder = GetOutputFolder(pluginContext, buildOptions.Value);
         outputFolder.Exists.ShouldBeTrue($"Output directory was not found: {outputFolder.Path}");
 
-        var targetFiles = outputFolder.ListFiles().ToArray();
-        targetFiles.ShouldNotBeEmpty("No artifacts were found to create the Release");
+        var targetFiles = outputFolder
+            .GetFiles(file => file.Extension.Equals(".msi", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        targetFiles.ShouldNotBeEmpty("No MSI installers were found to create the Release");
 
         var newRelease = new NewRelease(versioning.Version)
         {

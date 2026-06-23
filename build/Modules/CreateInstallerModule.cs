@@ -61,9 +61,10 @@ public sealed class CreateInstallerModule(IOptions<BuildOptions> buildOptions) :
             new CommandExecutionOptions
             {
                 WorkingDirectory = pluginContext.PluginRoot,
+                ThrowOnNonZeroExitCode = true,
                 EnvironmentVariables = new Dictionary<string, string?>
                 {
-                    { "PATH", $"{Environment.GetEnvironmentVariable("PATH")};{wixToolFolder}" },
+                    { "PATH", $"{Environment.GetEnvironmentVariable("PATH")};{wixToolFolder.Path}" },
                     { "PLUGIN_ROOT", pluginContext.PluginRoot },
                     { "INFRASTRUCTURE_PATH", pluginContext.InfrastructureRoot },
                     { "PLUGIN_CONFIG_PATH", pluginContext.ConfigPath }
@@ -81,7 +82,14 @@ public sealed class CreateInstallerModule(IOptions<BuildOptions> buildOptions) :
         }
 
         var outputFolder = new Folder(outputDirectory);
-        foreach (var outputFile in outputFolder.GetFiles(file => file.Extension == ".msi"))
+        var installerFiles = outputFolder
+            .GetFiles(file => file.Extension.Equals(".msi", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+
+        installerFiles.ShouldNotBeEmpty(
+            $"No MSI installers were found in the output directory: {outputDirectory}");
+
+        foreach (var outputFile in installerFiles)
         {
             context.Summary.KeyValue("Artifacts", "Installer", outputFile.Path);
         }
@@ -92,11 +100,24 @@ public sealed class CreateInstallerModule(IOptions<BuildOptions> buildOptions) :
     /// </summary>
     private static async Task<Folder> InstallWixAsync(IModuleContext context, CancellationToken cancellationToken)
     {
+        const string wixVersion = "6.0.2";
+
         var wixToolFolder = Folder.CreateTemporaryFolder();
         await context.DotNet().Tool.Execute(new DotNetToolOptions
         {
-            Arguments = ["install", "wix", "--tool-path", wixToolFolder.Path]
+            Arguments = ["install", "wix", "--version", wixVersion, "--tool-path", wixToolFolder.Path]
         }, cancellationToken: cancellationToken);
+
+        var wixExecutable = Path.Combine(wixToolFolder.Path, OperatingSystem.IsWindows() ? "wix.exe" : "wix");
+        await context.Shell.Command.ExecuteCommandLineTool(
+            new GenericCommandLineToolOptions(wixExecutable)
+            {
+                Arguments = ["extension", "add", "-g", $"WixToolset.UI.wixext/{wixVersion}"]
+            },
+            new CommandExecutionOptions
+            {
+                ThrowOnNonZeroExitCode = true
+            }, cancellationToken: cancellationToken);
 
         return wixToolFolder;
     }
