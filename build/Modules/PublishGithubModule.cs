@@ -4,12 +4,15 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ModularPipelines.Attributes;
 using ModularPipelines.Context;
+using ModularPipelines.FileSystem;
 using ModularPipelines.Git.Extensions;
 using ModularPipelines.Git.Options;
 using ModularPipelines.GitHub.Attributes;
 using ModularPipelines.GitHub.Extensions;
 using ModularPipelines.Modules;
+using ModularPipelines.Options;
 using Octokit;
+using RevitPlugin.Contracts;
 using Shouldly;
 
 namespace Build.Modules;
@@ -25,12 +28,15 @@ public sealed class PublishGithubModule(IOptions<BuildOptions> buildOptions) : M
 {
     protected override async Task ExecuteModuleAsync(IModuleContext context, CancellationToken cancellationToken)
     {
+        var pluginContext = PluginContext.Load();
         var versioningResult = await context.GetModule<ResolveVersioningModule>();
         var changelogResult = await context.GetModule<GenerateGitHubChangelogModule>();
         var versioning = versioningResult.ValueOrDefault!;
         var changelog = changelogResult.ValueOrDefault!;
 
-        var outputFolder = context.Git().RootDirectory.GetFolder(buildOptions.Value.OutputDirectory);
+        var outputFolder = GetOutputFolder(pluginContext, buildOptions.Value);
+        outputFolder.Exists.ShouldBeTrue($"Output directory was not found: {outputFolder.Path}");
+
         var targetFiles = outputFolder.ListFiles().ToArray();
         targetFiles.ShouldNotBeEmpty("No artifacts were found to create the Release");
 
@@ -39,7 +45,7 @@ public sealed class PublishGithubModule(IOptions<BuildOptions> buildOptions) : M
         {
             Name = versioning.Version,
             Body = changelog,
-            TargetCommitish = context.Git().Information.LastCommitSha,
+            TargetCommitish = await GetPluginCommitShaAsync(context, pluginContext.PluginRoot, cancellationToken),
             Prerelease = versioning.IsPrerelease
         };
 
@@ -69,11 +75,51 @@ public sealed class PublishGithubModule(IOptions<BuildOptions> buildOptions) : M
     {
         var versioningResult = await context.GetModule<ResolveVersioningModule>();
         var versioning = versioningResult.ValueOrDefault!;
+        var pluginRoot = PluginContext.Load().PluginRoot;
 
         await context.Git().Commands.Push(new GitPushOptions
         {
             Delete = true,
             Arguments = ["origin", versioning.Version]
-        }, token: cancellationToken);
+        }, new CommandExecutionOptions
+        {
+            WorkingDirectory = pluginRoot,
+            ThrowOnNonZeroExitCode = false
+        }, cancellationToken);
+    }
+
+    private static Folder GetOutputFolder(PluginContext pluginContext, BuildOptions buildOptions)
+    {
+        var outputDirectory = buildOptions.OutputDirectory;
+        if (!Path.IsPathRooted(outputDirectory))
+        {
+            outputDirectory = Path.Combine(pluginContext.PluginRoot, outputDirectory);
+        }
+        else
+        {
+            outputDirectory = Path.GetFullPath(outputDirectory);
+        }
+
+        return new Folder(outputDirectory);
+    }
+
+    private static async Task<string> GetPluginCommitShaAsync(IModuleContext context, string pluginRoot,
+        CancellationToken cancellationToken)
+    {
+        var revisionResult = await context.Git().Commands.RevList(
+            new GitRevListOptions
+            {
+                MaxCount = "1",
+                Pretty = "format:%H",
+                Arguments = ["HEAD"],
+                NoCommitHeader = true
+            },
+            new CommandExecutionOptions
+            {
+                WorkingDirectory = pluginRoot,
+                LogSettings = CommandLoggingOptions.Silent
+            }, cancellationToken);
+
+        return revisionResult.StandardOutput.Trim();
     }
 }
