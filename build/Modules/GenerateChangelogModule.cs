@@ -4,10 +4,10 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using ModularPipelines.Attributes;
 using ModularPipelines.Context;
-using ModularPipelines.Git.Extensions;
 using ModularPipelines.GitHub.Extensions;
 using ModularPipelines.Modules;
 using Octokit;
+using RevitPlugin.Contracts;
 using File = ModularPipelines.FileSystem.File;
 
 namespace Build.Modules;
@@ -29,7 +29,8 @@ public sealed class GenerateChangelogModule(IOptions<PublishOptions> publishOpti
             return await GenerateReleaseNotesAsync(context, versioning);
         }
 
-        var changelogFile = context.Git().RootDirectory.GetFile(publishOptions.Value.ChangelogFile);
+        var pluginRoot = PluginContext.Load().PluginRoot;
+        var changelogFile = new File(Path.Combine(pluginRoot, publishOptions.Value.ChangelogFile));
         if (!changelogFile.Exists)
         {
             context.Logger.LogWarning("Changelog specified but not found");
@@ -107,17 +108,65 @@ public sealed class GenerateChangelogModule(IOptions<PublishOptions> publishOpti
         ResolveVersioningResult versioning)
     {
         var repositoryId = long.Parse(context.GitHub().EnvironmentVariables.RepositoryId!);
-
-        var previousVersion = versioning.PreviousVersion;
-        var isHashedVersion = previousVersion.Length >= 40 &&
-                              previousVersion.All(c => char.IsDigit(c) || c is >= 'a' and <= 'f');
+        var previousTagName = await ResolvePreviousTagNameAsync(context, versioning);
 
         var releaseNotes = await context.GitHub().Client.Repository.Release.GenerateReleaseNotes(repositoryId,
             new GenerateReleaseNotesRequest(versioning.Version)
             {
-                PreviousTagName = isHashedVersion ? null : previousVersion
+                PreviousTagName = previousTagName
             });
 
         return releaseNotes.Body;
+    }
+
+    /// <summary>
+    ///     Resolves a previous tag name that exists on GitHub.
+    /// </summary>
+    private static async Task<string?> ResolvePreviousTagNameAsync(IModuleContext context,
+        ResolveVersioningResult versioning)
+    {
+        var candidate = versioning.PreviousVersion;
+        if (string.IsNullOrWhiteSpace(candidate))
+        {
+            return null;
+        }
+
+        var isHashedVersion = candidate.Length >= 40 &&
+                              candidate.All(c => char.IsDigit(c) || c is >= 'a' and <= 'f');
+        if (isHashedVersion)
+        {
+            return null;
+        }
+
+        var repositoryInfo = context.GitHub().RepositoryInfo;
+        var tagNames = (await context.GitHub().Client.Repository
+                .GetAllTags(repositoryInfo.Owner, repositoryInfo.RepositoryName))
+            .Select(tag => tag.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        if (tagNames.Count == 0)
+        {
+            return null;
+        }
+
+        if (tagNames.Contains(candidate))
+        {
+            return candidate;
+        }
+
+        var alternateTag = candidate.StartsWith("v", StringComparison.OrdinalIgnoreCase)
+            ? candidate[1..]
+            : $"v{candidate}";
+
+        if (tagNames.Contains(alternateTag))
+        {
+            return alternateTag;
+        }
+
+        context.Logger.LogWarning(
+            "Previous tag '{PreviousTag}' was not found on GitHub. Release notes will be generated without it.",
+            candidate);
+
+        return null;
     }
 }

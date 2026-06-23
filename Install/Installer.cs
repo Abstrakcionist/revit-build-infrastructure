@@ -3,7 +3,7 @@ using RevitPlugin.Contracts;
 using WixSharp;
 using WixSharp.CommonTasks;
 using WixSharp.Controls;
-
+using File = System.IO.File;
 
 
 var pluginRoot = Environment.GetEnvironmentVariable("PLUGIN_ROOT")
@@ -28,27 +28,30 @@ var project = new Project
     UI = WUI.WixUI_FeatureTree,
     MajorUpgrade = MajorUpgrade.Default,
     GUID = new Guid(config.Plugin.ProductGuid),
-    BannerImage = config.ResolvePath(
-        pluginRoot,
-        infrastructureRoot,
-        config.Install?.BannerImage,
-        @"Install\Resources\Icons\BannerImage.png"),
-    BackgroundImage = config.ResolvePath(
-        pluginRoot,
-        infrastructureRoot,
-        config.Install?.BackgroundImage,
-        @"Install\Resources\Icons\BackgroundImage.png"),
     Version = versioning.VersionPrefix,
     ControlPanelInfo =
     {
-        Manufacturer = config.Plugin.Manufacturer ?? Environment.UserName,
-        ProductIcon = config.ResolvePath(
-            pluginRoot,
-            infrastructureRoot,
-            config.Install?.ProductIcon,
-            @"Install\Resources\Icons\ShellIcon.ico")
+        Manufacturer = config.Plugin.Manufacturer ?? Environment.UserName
     }
 };
+
+ApplyOptionalInstallerAsset(config.ResolvePath(
+    pluginRoot,
+    infrastructureRoot,
+    config.Install?.BannerImage,
+    @"Install\Resources\Icons\BannerImage.png"), asset => project.BannerImage = asset);
+
+ApplyOptionalInstallerAsset(config.ResolvePath(
+    pluginRoot,
+    infrastructureRoot,
+    config.Install?.BackgroundImage,
+    @"Install\Resources\Icons\BackgroundImage.png"), asset => project.BackgroundImage = asset);
+
+ApplyOptionalInstallerAsset(config.ResolvePath(
+    pluginRoot,
+    infrastructureRoot,
+    config.Install?.ProductIcon,
+    @"Install\Resources\Icons\ShellIcon.ico"), asset => project.ControlPanelInfo.ProductIcon = asset);
 
 var wixEntities = Generator.GenerateWixEntities(args[1..]);
 project.RemoveDialogsBetween(NativeDialogs.WelcomeDlg, NativeDialogs.CustomizeDlg);
@@ -79,4 +82,12 @@ void BuildMultiUserUserMsi()
                 : @"%CommonAppDataFolder%\Autodesk\Revit\Addins", wixEntities)
     ];
     project.BuildMsi();
+}
+
+static void ApplyOptionalInstallerAsset(string path, Action<string> assign)
+{
+    if (File.Exists(path))
+    {
+        assign(path);
+    }
 }

@@ -16,6 +16,8 @@ on:
 jobs:
   publish:
     runs-on: windows-2025
+    permissions:
+      contents: write
     steps:
       - name: Checkout plugin
         uses: actions/checkout@v6
@@ -56,4 +58,4 @@ jobs:
           PLUGIN_CONFIG_PATH: ${{ github.workspace }}/plugin.config.json
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DOTNET_ENVIRONMENT: ${{ (github.ref_name == 'main' || github.ref_type == 'tag') && 'Production' || 'Development' }}
-          Publish__Version: ${{ inputs.version != '' && inputs.version || github.ref_name }}
+          Build__Version: ${{ inputs.version != '' && inputs.version || (github.ref_type == 'tag' && github.ref_name || '') }}
