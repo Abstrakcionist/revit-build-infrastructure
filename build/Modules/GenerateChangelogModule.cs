@@ -1,4 +1,5 @@
 ﻿using System.Text;
+using Build;
 using Build.Options;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -107,8 +108,10 @@ public sealed class GenerateChangelogModule(IOptions<PublishOptions> publishOpti
     private static async Task<string?> GenerateReleaseNotesAsync(IModuleContext context,
         ResolveVersioningResult versioning)
     {
-        var repositoryId = long.Parse(context.GitHub().EnvironmentVariables.RepositoryId!);
-        var previousTagName = await ResolvePreviousTagNameAsync(context, versioning);
+        var repository = await PluginGitHubRepository.ResolveAsync(context);
+        var repositoryId = PluginGitHubRepository.TryGetRepositoryId()
+                           ?? (await context.GitHub().Client.Repository.Get(repository.Owner, repository.RepositoryName)).Id;
+        var previousTagName = await ResolvePreviousTagNameAsync(context, repository, versioning);
 
         var releaseNotes = await context.GitHub().Client.Repository.Release.GenerateReleaseNotes(repositoryId,
             new GenerateReleaseNotesRequest(versioning.Version)
@@ -123,7 +126,7 @@ public sealed class GenerateChangelogModule(IOptions<PublishOptions> publishOpti
     ///     Resolves a previous tag name that exists on GitHub.
     /// </summary>
     private static async Task<string?> ResolvePreviousTagNameAsync(IModuleContext context,
-        ResolveVersioningResult versioning)
+        PluginGitHubRepository repository, ResolveVersioningResult versioning)
     {
         var candidate = versioning.PreviousVersion;
         if (string.IsNullOrWhiteSpace(candidate))
@@ -138,9 +141,8 @@ public sealed class GenerateChangelogModule(IOptions<PublishOptions> publishOpti
             return null;
         }
 
-        var repositoryInfo = context.GitHub().RepositoryInfo;
         var tagNames = (await context.GitHub().Client.Repository
-                .GetAllTags(repositoryInfo.Owner, repositoryInfo.RepositoryName))
+                .GetAllTags(repository.Owner, repository.RepositoryName))
             .Select(tag => tag.Name)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 

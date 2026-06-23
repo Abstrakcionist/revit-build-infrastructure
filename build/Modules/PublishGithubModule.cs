@@ -1,4 +1,5 @@
-﻿using Build.Options;
+﻿using Build;
+using Build.Options;
 using EnumerableAsyncProcessor.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -29,6 +30,7 @@ public sealed class PublishGithubModule(IOptions<BuildOptions> buildOptions) : M
     protected override async Task ExecuteModuleAsync(IModuleContext context, CancellationToken cancellationToken)
     {
         var pluginContext = PluginContext.Load();
+        var pluginRepository = await PluginGitHubRepository.ResolveAsync(context, cancellationToken);
         var versioningResult = await context.GetModule<ResolveVersioningModule>();
         var changelogResult = await context.GetModule<GenerateGitHubChangelogModule>();
         var versioning = versioningResult.ValueOrDefault!;
@@ -40,7 +42,6 @@ public sealed class PublishGithubModule(IOptions<BuildOptions> buildOptions) : M
         var targetFiles = outputFolder.ListFiles().ToArray();
         targetFiles.ShouldNotBeEmpty("No artifacts were found to create the Release");
 
-        var repositoryInfo = context.GitHub().RepositoryInfo;
         var newRelease = new NewRelease(versioning.Version)
         {
             Name = versioning.Version,
@@ -50,7 +51,7 @@ public sealed class PublishGithubModule(IOptions<BuildOptions> buildOptions) : M
         };
 
         var release = await context.GitHub().Client.Repository.Release
-            .Create(repositoryInfo.Owner, repositoryInfo.RepositoryName, newRelease);
+            .Create(pluginRepository.Owner, pluginRepository.RepositoryName, newRelease);
         await targetFiles
             .ForEachAsync(async file =>
             {

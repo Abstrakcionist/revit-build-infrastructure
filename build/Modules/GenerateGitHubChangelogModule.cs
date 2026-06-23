@@ -1,4 +1,5 @@
 ﻿using System.Text;
+using Build;
 using ModularPipelines.Attributes;
 using ModularPipelines.Context;
 using ModularPipelines.GitHub.Extensions;
@@ -20,16 +21,16 @@ public sealed class GenerateGitHubChangelogModule : Module<string>
         var versioning = versioningResult.ValueOrDefault!;
         var changelog = changelogResult.ValueOrDefault!;
 
-        return AppendGitHubCompareUrl(context, changelog, versioning);
+        return await AppendGitHubCompareUrl(context, changelog, versioning, cancellationToken);
     }
 
     /// <summary>
     ///     Append a GitHub compare URL to the changelog if it is not already included.
     /// </summary>
-    private static string AppendGitHubCompareUrl(IModuleContext context, string changelog,
-        ResolveVersioningResult versioning)
+    private static async Task<string> AppendGitHubCompareUrl(IModuleContext context, string changelog,
+        ResolveVersioningResult versioning, CancellationToken cancellationToken)
     {
-        var repositoryInfo = context.GitHub().RepositoryInfo;
+        var repository = await PluginGitHubRepository.ResolveAsync(context, cancellationToken);
         StringBuilder? changelogBuilder = null;
 
         if (!changelog.Contains("Full changelog", StringComparison.OrdinalIgnoreCase))
@@ -39,7 +40,7 @@ public sealed class GenerateGitHubChangelogModule : Module<string>
                 .AppendLine()
                 .Append("**Full changelog**: ")
                 .AppendLine(
-                    $"https://github.com/{repositoryInfo.Identifier}/compare/{versioning.PreviousVersion}...{versioning.Version}");
+                    $"https://github.com/{repository.Identifier}/compare/{versioning.PreviousVersion}...{versioning.Version}");
         }
 
         return changelogBuilder?.ToString() ?? changelog;
