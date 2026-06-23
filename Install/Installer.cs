@@ -5,7 +5,7 @@ using WixSharp.CommonTasks;
 using WixSharp.Controls;
 using File = System.IO.File;
 
-
+WixExtension.UI.PreferredVersion = "6.0.2";
 var pluginRoot = Environment.GetEnvironmentVariable("PLUGIN_ROOT")
                  ?? throw new InvalidOperationException("PLUGIN_ROOT is not set");
 
